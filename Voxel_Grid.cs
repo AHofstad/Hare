@@ -303,6 +303,33 @@ namespace Hare
                 }
             }
 
+            //public void Fill_Voxels(int m)
+            //{
+            //    int totalXY = VoxelCtX * VoxelCtY;
+
+            //    System.Threading.Tasks.Parallel.For(0, totalXY, idx =>
+            //    {
+            //        int x = idx / VoxelCtY;
+            //        int y = idx % VoxelCtY;
+
+            //        for (int z = 0; z < VoxelCtZ; z++)
+            //        {
+            //            Voxel_Inv[x, y, z, m] = new List<int>();
+            //            Point VoxelMin = new Point(x * VoxelDims.x - Epsilon, y * VoxelDims.y - Epsilon, z * VoxelDims.z - Epsilon);
+            //            Point VoxelMax = new Point((x + 1) * VoxelDims.x + Epsilon, (y + 1) * VoxelDims.y + Epsilon, (z + 1) * VoxelDims.z + Epsilon);
+            //            AABB Box = new AABB(VoxelMin + OBox.Min, VoxelMax + OBox.Min);
+            //            Voxels[x, y, z] = Box;
+            //            for (int i = 0; i < Model[m].Polygon_Count; i++)
+            //            {
+            //                if (Box.PolyBoxOverlap(Model[m].Polygon_Vertices(i)))
+            //                {
+            //                    Voxel_Inv[x, y, z, m].Add(i);
+            //                }
+            //            }
+            //        }
+            //    });
+            //}
+
             private struct ThreadParams
             {
                 public int startvoxel;

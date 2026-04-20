@@ -263,75 +263,104 @@ namespace Hare
                 Vertices = new SortedDictionary<ulong, SortedDictionary<ulong, Vertex>>();
                 Polys = new List<Polygon>(T.Length);
 
-                for (int i = 0; i < T.Length; i++)
-                //System.Threading.Tasks.Parallel.For(0, T.Length, i => 
+                var results = new (Polygon poly, List<Vertex> verts, List<(Vertex a, Vertex b)> edgePairs)[T.Length];
+
+                System.Threading.Tasks.Parallel.For(0, T.Length, i =>
                 {
                     List<Vertex> VertexList = new List<Vertex>();
                     for (int p = 0; p < T[i].Length; p++)
                     {
-                        Vertex pt;
-                        this.AddGetIndex(T[i][p], out pt);
-                        VertexList.Add(pt);
+                        // Create temporary vertices (will be merged later)
+                        Point pt = new Point(T[i][p].x, T[i][p].y, T[i][p].z);
+                        pt.Round(Prec);
+                        VertexList.Add(new Vertex(pt, -1)); // Index assigned later
                     }
 
-                    List<Edge> EdgeList = new List<Edge>();
-
+                    List<(Vertex a, Vertex b)> edgePairs = new List<(Vertex, Vertex)>();
                     for (int p = 0; p < VertexList.Count; p++)
                     {
-                        Edge e;
-                        if ((VertexList[p] - VertexList[(p + 1) % VertexList.Count]).Length() < 0.0001) continue;
-                        this.AddGetEdge(VertexList[p], VertexList[(p + 1) % VertexList.Count], out e);
-                        EdgeList.Add(e);
+                        var a = VertexList[p];
+                        var b = VertexList[(p + 1) % VertexList.Count];
+                        if ((a - b).Length() >= 0.0001)
+                            edgePairs.Add((a, b));
                     }
 
                     Polygon poly;
                     if (VertexList.Count == 4)
-                    {
-                        poly = new Quadrilateral(ref VertexList, 0, Polys.Count);
-                    }
+                        poly = new Quadrilateral(ref VertexList, 0, i);
                     else if (VertexList.Count == 3)
-                    {
-                        poly = new Triangle(ref VertexList, 0, Polys.Count);
-                    }
+                        poly = new Triangle(ref VertexList, 0, i);
                     else
-                    {
                         throw new NotImplementedException("Hare Does not yet support polygons of more than 4 sides.");
+
+                    results[i] = (poly, VertexList, edgePairs);
+                });
+
+                Dictionary<(ulong, ulong), Vertex> vertexMap = new Dictionary<(ulong, ulong), Vertex>();
+
+                for (int i = 0; i < results.Length; i++)
+                {
+                    var (poly, verts, edgePairs) = results[i];
+
+                    // Remap vertices to deduplicated ones
+                    for (int v = 0; v < verts.Count; v++)
+                    {
+                        Point pt = verts[v];
+                        ulong h1, h2;
+                        pt.Hash2(this.Modspace, out h1, out h2);
+                        var key = (h1, h2);
+
+                        if (!vertexMap.TryGetValue(key, out Vertex existing))
+                        {
+                            existing = new Vertex(pt, Vertices_List.Count);
+                            Vertices_List.Add(existing);
+                            vertexMap[key] = existing;
+                        }
+                        poly.Points[v] = existing;
+                        existing.Polys.Add(poly);
                     }
 
-                    lock (Top_Lock)
+                    // Build edges
+                    foreach (var (a, b) in edgePairs)
                     {
-                        Polys.Add(poly);
-                        foreach (Vertex v in VertexList) v.Polys.Add(poly);
-                        foreach (Edge e in EdgeList)
+                        ulong ah1, ah2, bh1, bh2;
+                        ((Point)a).Hash2(this.Modspace, out ah1, out ah2);
+                        ((Point)b).Hash2(this.Modspace, out bh1, out bh2);
+                        Vertex va = vertexMap[(ah1, ah2)];
+                        Vertex vb = vertexMap[(bh1, bh2)];
+
+                        System.Int64 eh = Edge.Hash(va, vb, this.Modspace);
+                        if (!Edges.TryGetValue(eh, out Edge e))
                         {
-                            poly.Edges.Add(e);
-                            e.Append_Poly_Relationship(poly);
+                            e = new Edge(va, vb);
+                            Edges[eh] = e;
                         }
+                        poly.Edges.Add(e);
+                        e.Append_Poly_Relationship(poly);
                     }
-                }//);
+
+                    Polys.Add(poly);
+                }
+
+                Dictionary<int, int> planeHashToIndex = new Dictionary<int, int>();
 
                 for (int i = 0; i < Polys.Count; i++)
                 {
                     Plane p1 = new Plane(Polys[i]);
-                    bool foundit = false;
+                    int hash = p1.GetHashCode();
 
-                    for (int j = 0; j < planeList.Count; j++)
+                    if (planeHashToIndex.TryGetValue(hash, out int j))
                     {
-                        if (p1.GetHashCode() == planeList[j].GetHashCode())
-                        {
-                            Polys[i].Plane_ID = j;
-                            Plane_Members[j].Add(i);
-                            foundit = true;
-                        }
+                        Polys[i].Plane_ID = j;
+                        Plane_Members[j].Add(i);
                     }
-                    if (!foundit)
+                    else
                     {
+                        int newIndex = planeList.Count;
                         planeList.Add(p1);
-                        Plane_Members.Add(new List<int>());
-                        //Array.Resize<List<int>>(ref Plane_Members, Plane_Members.Length + 1);
-                        //Plane_Members[Plane_Members.Length - 1] = new List<int>();
-                        Plane_Members[Plane_Members.Count - 1].Add(i);
-                        Polys[i].Plane_ID = planeList.Count - 1;
+                        Plane_Members.Add(new List<int> { i });
+                        Polys[i].Plane_ID = newIndex;
+                        planeHashToIndex[hash] = newIndex;
                     }
                 }
 
